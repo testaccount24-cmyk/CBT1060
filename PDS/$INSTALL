@@ -1,0 +1,6 @@
+Installation for this package is as follows:
+
+Copy these members into a library in your SYSEXEC/SYSPROC allocation:
+IODFINFO
+
+Note: All ISPF Panels are inline in the REXX code.

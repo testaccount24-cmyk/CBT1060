@@ -1,0 +1,100 @@
+           SAMPLE IODFINFO PANEL OUTPUTS
+           ------ -------- ----- -------
+
+     The following is sample output of IODFINFO
+                 on a real machine
+
+
+                          PANELID:  PROCPAN1
+
++------------------ Main Panel -------------------+
+|                                                 |
+| COMMAND ===>               SCROLL ===> CSR      |
+|                                                 |
+|                                                 |
+|  Select one of the following options.           |
+|                                                 |
+|      _   1.  LPAR Definition Details            |
+|          2.  Processor Information              |
+|          3.  Dynamic I/O Update Details         |
+|          4.  I/O Configuration Details          |
+|                                                 |
+|                                                 |
++-------------------------------------------------+
+
+
+     Output of Option 1 : PANELID:  PROCPAN6
+     ------ -- ------ -
+
++-------------------------- LPAR Definitions --------------------------+
+| COMMAND ===>                                             Row 1 of 15 |
+|                                         SCROLL ===> CSR              |
+|                                                                      |
+|  Time Slice:                 0                                       |
+|  No Of Physical Processors   13                                      |
+|  Required For PR/SM Use:                                             |
+|                                                                      |
+|  Partition  Partition  No Of Logical   Relative  Wait        Capped  |
+|  Name       No         CPUs Assigned   SHR       Completion          |
+|                                                                      |
+|  TRNG       7          1               10         N           N      |
+|  CPUA       1          1               5          N           N      |
+|  ICF1LP7    2          1               50         N           N      |
+|  ICF2LP8    3          1               50         N           N      |
++----------------------------------------------------------------------+
+
+
+     Output of Option 2 : PANELID:  PROCPAN3
+     ------ -- ------ -
+
++------------- Processor Information -------------+
+|                                                 |
+| COMMAND ===>               SCROLL ===> CSR      |
+|                                                 |
+|                                                 |
+|     PR/SM Machine:                 Y            |
+|     Serial Enabled Machine:        Y            |
+|     ESCA Processor:                Y            |
+|     Switch in Processor:           N            |
+|     Partition Number:              7            |
+|     No Of Extended Storage Slots   0M           |
+|     In The current partition:                   |
+|                                                 |
++-------------------------------------------------+
+
+
+     Output of Option 3 : PANELID:  PROCPAN4
+     ------ -- ------ -
+
++-------- Dynamic I/O Update Information ---------+
+|                                                 |
+| COMMAND ===>               SCROLL ===> CSR      |
+|                                                 |
+|                                                 |
+|   Configuration Updated Since Last IPL:     N   |
+|   Dynamic I/O Enabled:                      Y   |
+|   System IPLed via IODF:                    Y   |
+|   I/O Config Info Valid:                    Y   |
+|   Configuration Update Actually Performed:  N   |
+|                                                 |
++-------------------------------------------------+
+
+
+     Output of Option 4 : PANELID:  PROCPAN5
+     ------ -- ------ -
+
++---------- I/O Configuration Information ----------+
+|                                                   |
+| COMMAND ===>               SCROLL ===> CSR        |
+|                                                   |
+|                                                   |
+|  Current IODF Name:        SYS9.IODFA1            |
+|  IODF Suffix:              A1                     |
+|  Token Information:                               |
+|     IODF Creation Date:    02/03/25               |
+|     IODF Creation Time:    17.28.07               |
+|                                                   |
++---------------------------------------------------+
+
+
+

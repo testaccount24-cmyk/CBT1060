@@ -1,0 +1,759 @@
+/**rexx**/
+/*  PROGRAM-ID           IODFINFO                                  */
+/*  Remarks              This REXX exec will display the following */
+/*                       information.                              */
+/*                       1. LPAR Definition details                */
+/*                       2. Requester's LPAR details               */
+/*                       3. Dynamic I/O details                    */
+/*                       4. I/O Configuration details              */
+/*                                                                 */
+/*  Updates:             1. Make the ISPF Panels inline (LBD)      */
+/*                                                                 */
+/*trace i*/
+save_prompt = prompt("off")
+option= '  '                                /* option field       */
+
+/* Dynamically load the ISPF Panels */
+load_info = loadispf()
+
+main_processing_loop:
+do forever
+   call display_the_main_panel              /* display main panel */
+   select
+      when (poption = '1') then do          /* LPAR set up?       */
+           call lpar_definitions            /* yes-               */
+      end
+      when (poption = '2') then do          /* requester's LPAR?  */
+           call requesters_lpar_info        /* yes-               */
+      end
+      when (poption = '3') then do          /* display dynamic i/o*/
+           call display_dynamic_io_info     /* yes-               */
+      end
+      when (poption = '4') then do          /* display i/o info?  */
+           call display_io_information      /* yes-               */
+      end
+      otherwise nop
+   end
+   ADDRESS "ISPEXEC" "REMPOP"               /* remove pop-up      */
+end
+Lets_Lock_The_Terminal:
+ADDRESS "ISPEXEC" "CONTROL DISPLAY LOCK" /* lock the terminal      */
+if (rc > 8) then do                      /* error?                 */
+   say 'Lock error    rc = 'rc''         /* yes- output message    */
+   call done                             /* and quit               */
+end
+ADDRESS "ISPEXEC" "ADDPOP ROW(3) COLUMN(3)" /* pop-up position     */
+info= 'Your Request Is being Processed Please Wait'
+ADDRESS "ISPEXEC" "DISPLAY PANEL(procpan2)"
+if (rc > 8) then do                      /* error?                 */
+   say 'Display error    rc = 'rc''      /* yes- output message    */
+   call done                             /* and quit               */
+end
+return
+display_the_main_panel:
+ADDRESS "ISPEXEC" "ADDPOP ROW(2) COLUMN(10)" /* pop-up position    */
+ADDRESS "ISPEXEC" "DISPLAY PANEL(procpan1)"
+if (rc > 8) then do                   /* error?                    */
+   say 'Display error    rc = 'rc''   /* yes- output message       */
+   call done                          /* and quit                  */
+end
+if (rc = 8) then do                   /* return?                   */
+   ADDRESS "ISPEXEC" "REMPOP"         /* remove pop-up             */
+   call done                          /* and quit                  */
+end
+return
+lpar_definitions:
+call Lets_Lock_The_Terminal              /* lock the terminal      */
+prsminfo                                 /* obtain the PR/SM info  */
+pc= rc                                   /* return code            */
+if (pc \= 0) then do                     /* error?                 */
+   ADDRESS "ISPEXEC" "REMPOP"            /* remove pop-up          */
+   select
+      when (pc = 4) then do              /* lra error?             */
+           say 'LRA Error:  rc = 'pc''   /* inform the user        */
+           call done                     /* and quit               */
+      end
+      when (pc = 8) then do              /* lra error?             */
+           say 'Diagnose Command Error:  rc = 'pc''
+           call done                     /* and quit               */
+      end
+      when (pc = 8) then do              /* diagnose command error */
+           say 'Diagnose Command Error:  rc = 'pc''
+           call done                     /* and quit               */
+      end
+      when (pc = 12) then do             /* REXX variable build err*/
+           say 'REXX Build Error:  rc = 'pc''
+           call done                     /* and quit               */
+      end
+      when (pc = 16) then do             /* No LPARs defined       */
+           ADDRESS "ISPEXEC" "ADDPOP ROW(3) COLUMN(3)"
+           info= '*** No LPARs Defined On This Processor ***'
+           ADDRESS "ISPEXEC" "DISPLAY PANEL(procpan2)"
+           if (rc > 8) then do
+              say 'Display error    rc = 'pc''
+              call done
+           end
+           ADDRESS "ISPEXEC" "REMPOP"    /* remove pop-up          */
+           return                        /* return to caller       */
+      end
+      otherwise
+           say 'Invalid Return Code from PRSMINFO. rc = 'pc''
+           call done                     /* and quit               */
+   end
+end
+ADDRESS "ISPEXEC" "TBCREATE LPARTAB NOWRITE REPLACE"
+if (rc >  4) then do                     /* call okay?             */
+   say 'tbcreate error    rc = 'rc''     /* no- inform the user    */
+   call done                             /* let's quit             */
+end
+ADDRESS  "ISPEXEC" "VPUT    (ztdmark) SHARED"
+tabrows=  9999                           /* max table rows         */
+x= 6                                     /* starting position      */
+no_of_lpar_entries= x2d(c2x(substr(lparinf,5,1)))
+timeslce= x2d(c2x(substr(lparinf,1,2)))  /* time slice value       */
+phyproc=  x2d(c2x(substr(lparinf,3,2)))  /* no physical processors */
+                                         /* assigned for PR/SM use */
+do i= 1 to no_of_lpar_entries            /* do no of table entries */
+   partname= substr(lparinf,x,8)         /* partition name         */
+   partno=   x2d(c2x(substr(lparinf,x+8,1))) /* partition number   */
+   logcpus=  x2d(c2x(substr(lparinf,x+9,1))) /* partition number   */
+   wcompl=   substr(lparinf,x+10,1)      /* wait=completion        */
+   capped=   substr(lparinf,x+11,1)      /* capped                 */
+   relshr=   x2d(c2x(substr(lparinf,x+12,2))) /* partition number  */
+   ADDRESS "ISPEXEC" "TBADD LPARTAB
+      SAVE(partname,partno,logcpus,relshr,wcompl,capped)
+      MULT("TABROWS")"
+   if (rc \= 0) then do                  /* call okay?             */
+      say 'tbadd error    rc = 'rc''     /* no- inform the user    */
+      call done                          /* let's quit             */
+   end
+   x= (x + 14)                           /* next table entry       */
+end
+ADDRESS "ISPEXEC" "REMPOP"             /* remove pop-up            */
+ADDRESS "ISPEXEC" "ADDPOP ROW(1) COLUMN(2)" /* pop-up position     */
+ADDRESS "ISPEXEC" "TBTOP LPARTAB"      /* position to top of tab   */
+if (rc \= 0) then do                   /* call okay?               */
+   say 'tbtop error    rc = 'rc''      /* no- inform the user      */
+   call done                           /* let's quit               */
+end
+ADDRESS "ISPEXEC" "TBDISPL LPARTAB PANEL(PROCPAN6)"
+if (rc > 8) then do                   /* error?                    */
+   say 'tbdispl error    rc = 'rc''   /* yes- output message       */
+   call done                          /* and quit                  */
+end
+ADDRESS "ISPEXEC" "TBCLOSE  LPARTAB"  /* close the table           */
+if (rc \= 0) then do                  /* call okay?                */
+   say 'tbtop error    rc = 'rc''     /* no- inform the user       */
+   call done                            /* let's quit              */
+end
+ADDRESS "ISPEXEC" "REMPOP"              /* remove pop-up           */
+return
+requesters_lpar_info:
+call Lets_Lock_The_Terminal             /* lock the terminal       */
+cvt=       c2x(storage(10,4))           /* cvt address             */
+cvtfmctl@= d2x((x2d(cvt))+796)          /* cvt + 796 = cvtmfctl    */
+cvtfmctl=  c2x(storage(cvtfmctl@,4))    /* cvtmfctl                */
+stgsbfls@= d2x(x2d(cvtfmctl)+173)       /* stgsbfls @              */
+stgsbfls=  storage(stgsbfls@,1)         /* stgsbfls                */
+prsmproc=  bitand(stgsbfls,'80'x)       /* test pr/sm machine      */
+prsmp= 'N'                              /* set default             */
+if (prsmproc = '80'x) then              /* pr/sm processor?        */
+   prsmp= 'Y'                           /* yes                     */
+escaproc= bitand(stgsbfls,'40'x)        /* test esca processor     */
+escap= 'N'                              /* set default             */
+if (escaproc = '40'x) then              /* esca processor?         */
+   escap= 'Y'                           /* yes                     */
+serlmach= bitand(stgsbfls,'20'x)        /* serial enabled processor*/
+sem=   'N'                              /* set default             */
+if (serlmach = '20'x) then              /* serial enabled machine? */
+   sem= 'Y'                             /* yes                     */
+switch=  bitand(stgsbfls,'10'x)         /* switch in configuration */
+swtchp= 'N'                             /* set default             */
+if (switch = '10'x) then                /* switch in the config?   */
+   swtchp= 'Y'                          /* yes                     */
+stgsprtn@= d2x(x2d(cvtfmctl)+174)       /* stgsprtn @              */
+partnum=   storage(stgsprtn@,1)         /* partition number        */
+partnum=   c2d(partnum,1)               /* partition number        */
+stgessl@=  d2x(x2d(cvtfmctl)+176)       /* stgessl @               */
+noestor=   storage(stgessl@,4)          /* number of estor slots   */
+noestor=   (c2d(noestor)*4096)/1048576  /* convert to megabytes    */
+noestor=   noestor||'M'                 /* append 'M'              */
+ADDRESS "ISPEXEC" "REMPOP"               /* remove pop-up          */
+ADDRESS "ISPEXEC" "ADDPOP ROW(3) COLUMN(3)" /* pop-up position     */
+ADDRESS "ISPEXEC" "DISPLAY PANEL(procpan3)"
+if (rc > 8) then do                      /* error?                 */
+   say 'Display error    rc = 'rc''      /* yes- output message    */
+   call done                             /* and quit               */
+end
+ADDRESS "ISPEXEC" "REMPOP"               /* remove pop-up          */
+return
+display_dynamic_io_info:
+call Lets_Lock_The_Terminal             /* lock the terminal       */
+cvt=       c2x(storage(10,4))           /* cvt address             */
+cvtfmctl@= d2x((x2d(cvt))+796)          /* cvt + 796 = cvtmfctl    */
+cvtfmctl=  c2x(storage(cvtfmctl@,4))    /* cvtmfctl                */
+stgsdcfl@= d2x(x2d(cvtfmctl)+248)       /* stgsdcfl @              */
+stgsdcfl=  storage(stgsdcfl@,1)         /* stgsdcfl                */
+cciplx=    bitand(stgsdcfl,'20'x)       /* config chg since ipl    */
+cuipl= 'N'                              /* set default             */
+if (cuiplx = '20'x) then                /* configuration changed?  */
+   cuipl= 'Y'                           /* yes                     */
+dioex=  bitand(stgsdcfl,'10'x)          /* dynamic i/o enabled     */
+dioe= 'N'                               /* set default             */
+if (dioex = '10'x) then                 /* dynamic i/o enabled?    */
+   dioe= 'Y'                            /* yes                     */
+iodfiplx= bitand(stgsdcfl,'08'x)        /* system IPLed via IODF   */
+iodfipl= 'N'                            /* set default             */
+if (iodfiplx = '08'x) then              /* system IPLed via IODF?  */
+   iodfipl= 'Y'                         /* yes                     */
+iocvalx=  bitand(stgsdcfl,'04'x)        /* i/o config valid        */
+iocval= 'N'                             /* set default             */
+if (iocvalx = '04'x) then               /* i/o config valid?       */
+   iocval= 'Y'                          /* yes                     */
+updperfx=  bitand(stgsdcfl,'02'x)       /* config update performed?*/
+updperf= 'N'                            /* set default             */
+if (updperfx = '02'x) then              /* config update performed */
+   updperf= 'Y'                         /* yes                     */
+ADDRESS "ISPEXEC" "REMPOP"               /* remove pop-up          */
+ADDRESS "ISPEXEC" "ADDPOP ROW(3) COLUMN(3)" /* pop-up position     */
+ADDRESS "ISPEXEC" "DISPLAY PANEL(procpan4)"
+if (rc > 8) then do                      /* error?                 */
+   say 'Display error    rc = 'rc''      /* yes- output message    */
+   call done                             /* and quit               */
+end
+ADDRESS "ISPEXEC" "REMPOP"               /* remove pop-up          */
+return
+display_io_information:
+call Lets_Lock_The_Terminal              /* lock the terminal      */
+cvt=       c2x(storage(10,4))            /* cvt address            */
+cvtfmctl@= d2x((x2d(cvt))+796)           /* cvt + 796 = cvtmfctl   */
+cvtfmctl=  c2x(storage(cvtfmctl@,4))     /* cvtmfctl               */
+stgstnm@=  d2x(x2d(cvtfmctl)+258)        /* stgstnm @              */
+ioinfo=    storage(stgstnm@,64)          /* i/o config information */
+ciodfnme=  substr(ioinfo,1,20)           /* IODF name              */
+iodfsufx=  substr(ioinfo,45,2)           /* suffix of IODF name    */
+iodfcd=    substr(ioinfo,49,8)           /* IODF creation date     */
+iodfct=    substr(ioinfo,57,8)           /* IODF creation time     */
+ADDRESS "ISPEXEC" "REMPOP"               /* remove pop-up          */
+ADDRESS "ISPEXEC" "ADDPOP ROW(3) COLUMN(3)" /* pop-up position     */
+ADDRESS "ISPEXEC" "DISPLAY PANEL(procpan5)"
+if (rc > 8) then do                      /* error?                 */
+   say 'Display error    rc = 'rc''      /* yes- output message    */
+   call done                             /* and quit               */
+end
+ADDRESS "ISPEXEC" "REMPOP"               /* remove pop-up          */
+return
+  /* ---------------------------- */
+  /* Done with processing so exit */
+  /* ---------------------------- */
+Done:
+  rc = dropispf(load_info)
+  exit 0
+/* --------------------  rexx procedure  -------------------- *
+ * Name:      LoadISPF                                        *
+ *                                                            *
+ * Function:  Load ISPF elements that are inline in the       *
+ *            REXX source code.                               *
+ *                                                            *
+ * Syntax:    load_info = loadispf()                          *
+ *            rc = dropispf(load_info)                        *
+ *                                                            *
+ *            *** Note that dropispf is a routine at the      *
+ *            *** bottom of this exec.                        *
+ *                                                            *
+ *            The inline ISPF resources are limited to        *
+ *            ISPF Messages, Panels, and Skeletons,           *
+ *                 CLISTs and EXECs are also supported.       *
+ *                                                            *
+ *            The inline resources must start in column 1     *
+ *            and use the following syntax:                   *
+ *                                                            *
+ *            >START    used to indicate the start of the     *
+ *                      inline data                           *
+ *                                                            *
+ *            >END    - used to indicate the end of the       *
+ *                      inline data                           *
+ *                                                            *
+ *            Each resource begins with a type record:        *
+ *            >type name                                      *
+ *               where type is CLIST, EXEC, MSG, PANEL, SKEL  *
+ *                     name is the name of the element        *
+ *                                                            *
+ * Sample usage:                                              *
+ *          -* rexx *-                                        *
+ *          load_info = loadispf()                            *
+ *          ... magic code happens here (your code) ...       *
+ *          rc = dropispf(load_info)                          *
+ *          exit                                              *
+ *          >Start inline elements                            *
+ *          >Panel panel1                                     *
+ *          ...                                               *
+ *          >Msg msg1                                         *
+ *          ...                                               *
+ *          >End of inline elements                           *
+ *                                                            *
+ * Returns:   the list of ddnames allocated for use along     *
+ *            with the libdef's performed or altlib           *
+ *                                                            *
+ *            format is ddname libdef ddname libdef ...       *
+ *                   libdef may be altlibc or altlibe         *
+ *                   for altlib clist or altlib exec          *
+ *                                                            *
+ * Notes:     Entire routine must be included with REXX       *
+ *            exec - inline with the code.                    *
+ *                                                            *
+ * Comments:  The entire rexx program is processed from the   *
+ *            last record to the first to find the >START     *
+ *            record at which point all records from that     *
+ *            point on are processed until the >END           *
+ *            statement or the end of the program is found.   *
+ *                                                            *
+ *            It is *strongly* suggested that the inline      *
+ *            elements be at the very end of your code so     *
+ *            that the search for them is faster.             *
+ *                                                            *
+ *            Inline ISPTLIB or ISPLLIB were not supported    *
+ *            because the values for these would have to be   *
+ *            in hex.                                         *
+ *                                                            *
+ * Author:    Lionel B. Dyck                                  *
+ *                                                            *
+ * History:                                                   *
+ *            01/09/19 - Include DROPISPF routine             *
+ *            08/29/17 - Fixup static values that were vars   *
+ *            05/31/17 - Change default directory count       *
+ *            12/09/16 - update for add_it routine            *
+ *            05/10/16 - correction for clist and exec        *
+ *            04/19/16 - bug correction                       *
+ *            06/04/04 - Enhancements for speed               *
+ *            08/05/02 - Creation                             *
+ *                                                            *
+ * ---------------------------------------------------------- *
+ * Disclaimer: There is no warranty, either explicit or       *
+ * implied with this code. Use it at your own risk as there   *
+ * is no recourse from either the author or his employeer.    *
+ * ---------------------------------------------------------- */
+LoadISPF: Procedure
+
+  parse value "" with null kmsg kpanel kskel first returns ,
+    kclist kexec
+/* ------------------------------------------------------- *
+ * Find the InLine ISPF Elements and load them into a stem *
+ * variable.                                               *
+ *                                                         *
+ * Elements keyword syntax:                                *
+ * >START - start of inline data                           *
+ * >CLIST name                                             *
+ * >EXEC name                                              *
+ * >MSG name                                               *
+ * >PANEL name                                             *
+ * >SKEL name                                              *
+ * >END   - end of all inline data (optional if last)      *
+ * ------------------------------------------------------- */
+  last_line = sourceline()
+  do i = last_line to 1 by -1
+    line = sourceline(i)
+    if translate(left(line,6)) = ">START " then leave
+  end
+  rec = 0
+/* --------------------------------------------------- *
+ * Flag types of ISPF resources by testing each record *
+ * then add each record to the data. stem variable.    *
+ * --------------------------------------------------- */
+  do j = i+1 to last_line
+    line = sourceline(j)
+    if translate(left(line,5)) = ">END "   then leave
+    if translate(left(line,7)) = ">CLIST " then kclist = 1
+    if translate(left(line,6)) = ">EXEC "  then kexec  = 1
+    if translate(left(line,5)) = ">MSG "   then kmsg   = 1
+    if translate(left(line,7)) = ">PANEL " then kpanel = 1
+    if translate(left(line,6)) = ">SKEL "  then kskel  = 1
+    rec  = rec + 1
+    data.rec = line
+  end
+
+/* ----------------------------------------------------- *
+ * Now create the Library and Load the Member(s)         *
+ * ----------------------------------------------------- */
+  Address ISPExec
+/* ----------------------------- *
+ * Assign dynamic random ddnames *
+ * ----------------------------- */
+  clistdd = "lc"random(999)
+  execdd  = "le"random(999)
+  msgdd   = "lm"random(999)
+  paneldd = "lp"random(999)
+  skeldd  = "ls"random(999)
+
+/* ---------------------------------------- *
+ *  LmInit and LmOpen each resource library *
+ * ---------------------------------------- */
+  if kclist <> null then do
+    call alloc_dd clistdd
+    "Lminit dataid(clist) ddname("clistdd")"
+    "LmOpen dataid("clist") Option(Output)"
+    returns = strip(returns clistdd 'ALTLIBC')
+  end
+  if kexec <> null then do
+    call alloc_dd execdd
+    "Lminit dataid(exec) ddname("execdd")"
+    "LmOpen dataid("exec") Option(Output)"
+    returns = strip(returns execdd 'ALTLIBE')
+  end
+  if kmsg <> null then do
+    call alloc_dd msgdd
+    "Lminit dataid(msg) ddname("msgdd")"
+    "LmOpen dataid("msg") Option(Output)"
+    returns = strip(returns msgdd 'ISPMLIB')
+  end
+  if kpanel <> null then do
+    call alloc_dd paneldd
+    "Lminit dataid(panel) ddname("paneldd")"
+    "LmOpen dataid("panel") Option(Output)"
+    returns = strip(returns paneldd 'ISPPLIB')
+  end
+  if kskel <> null then do
+    call alloc_dd skeldd
+    "Lminit dataid(skel) ddname("skeldd")"
+    "LmOpen dataid("skel") Option(Output)"
+    returns = strip(returns skeldd 'ISPSLIB')
+  end
+
+/* ----------------------------------------------- *
+ * Process all records in the data. stem variable. *
+ * ----------------------------------------------- */
+  do i = 1 to rec
+    record = data.i
+    recordu = translate(record)
+    if left(recordu,5) = ">END " then leave
+    if left(recordu,7) = ">CLIST " then do
+      if first = 1 then call add_it
+      type = "Clist"
+      first = 1
+      parse value record with x name
+      iterate
+    end
+    if left(recordu,6) = ">EXEC " then do
+      if first = 1 then call add_it
+      type = "Exec"
+      first = 1
+      parse value record with x name
+      iterate
+    end
+    if left(recordu,5) = ">MSG " then do
+      if first = 1 then call add_it
+      type = "Msg"
+      first = 1
+      parse value record with x name
+      iterate
+    end
+    if left(recordu,7) = ">PANEL " then do
+      if first = 1 then call add_it
+      type = "Panel"
+      first = 1
+      parse value record with x name
+      iterate
+    end
+    if left(recordu,6) = ">SKEL " then do
+      if first = 1 then call add_it
+      type = "Skel"
+      first = 1
+      parse value record with x name
+      iterate
+    end
+   /* --------------------------------------------*
+    * Put the record into the appropriate library *
+    * based on the record type.                   *
+    * ------------------------------------------- */
+    Select
+      When type = "Clist" then
+      "LmPut dataid("clist") MODE(INVAR)" ,
+        "DataLoc(record) DataLen(255)"
+      When type = "Exec" then
+      "LmPut dataid("exec") MODE(INVAR)" ,
+        "DataLoc(record) DataLen(255)"
+      When type = "Msg" then
+      "LmPut dataid("msg") MODE(INVAR)" ,
+        "DataLoc(record) DataLen(80)"
+      When type = "Panel" then
+      "LmPut dataid("panel") MODE(INVAR)" ,
+        "DataLoc(record) DataLen(80)"
+      When type = "Skel" then
+      "LmPut dataid("skel") MODE(INVAR)" ,
+        "DataLoc(record) DataLen(80)"
+      Otherwise nop
+    end
+  end
+  if type <> null then call add_it
+/* ---------------------------------------------------- *
+ * Processing completed - now lmfree the allocation and *
+ * Libdef the library.                                  *
+ * ---------------------------------------------------- */
+  if kclist <> null then do
+    Address TSO,
+      "Altlib Act Application(Clist) File("clistdd")"
+    "LmFree dataid("clist")"
+  end
+  if kexec <> null then do
+    Address TSO,
+      "Altlib Act Application(Exec) File("execdd")"
+    "LmFree dataid("exec")"
+  end
+  if kmsg <> null then do
+    "LmFree dataid("msg")"
+    "Libdef ISPMlib Library ID("msgdd") Stack"
+  end
+  if kpanel <> null then do
+    "Libdef ISPPlib Library ID("paneldd") Stack"
+    "LmFree dataid("panel")"
+  end
+  if kskel <> null then do
+    "Libdef ISPSlib Library ID("skeldd") Stack"
+    "LmFree dataid("skel")"
+  end
+  return returns
+
+/* --------------------------- *
+ * Add the Member using LmmAdd *
+ * based upon type of resource *
+ * --------------------------- */
+Add_It:
+  Select
+    When type = "Clist" then
+    "LmmAdd dataid("clist") Member("name")"
+    When type = "Exec" then
+    "LmmAdd dataid("exec") Member("name")"
+    When type = "Msg" then
+    "LmmAdd dataid("msg") Member("name")"
+    When type = "Panel" then
+    "LmmAdd dataid("panel") Member("name")"
+    When type = "Skel" then
+    "LmmAdd dataid("skel") Member("name")"
+    Otherwise nop
+  end
+  type = null
+  return
+
+/* ------------------------------ *
+ * ALlocate the temp ispf library *
+ * ------------------------------ */
+Alloc_DD:
+  arg dd
+  Address TSO
+  if pos(left(dd,2),"lc le") > 0 then
+  "Alloc f("dd") unit(sysda) spa(5,5) dir(5)",
+    "recfm(v b) lrecl(255) blksize(32760)"
+  else
+  "Alloc f("dd") unit(sysda) spa(5,5) dir(5)",
+    "recfm(f b) lrecl(80) blksize(23440)"
+  return
+
+/* --------------------  rexx procedure  -------------------- *
+ * Name:      DropISPF                                        *
+ *                                                            *
+ * Function:  Remove ISPF LIBDEF's and deactivate ALTLIB's    *
+ *            that were created by the LoadISPF function.     *
+ *                                                            *
+ * Syntax:    rc = dropispf(load_info)                        *
+ *                                                            *
+ * Author:    Janko                                           *
+ *                                                            *
+ * History:                                                   *
+ *            12/05/18 - Creation                             *
+ * ---------------------------------------------------------- */
+DropISPF: Procedure
+  arg load_info
+  Address ISPEXEC
+  do until length(load_info) = 0
+    parse value load_info with dd libd load_info
+    if left(libd,6) = "ALTLIB" then do
+      if libd = "ALTLIBC" then lib = "CLIST"
+      else lib = "EXEC"
+      Address TSO,
+        "Altlib Deact Application("lib")"
+    end
+    else "libdef" libd
+    address tso "free f("dd")"
+  end
+  return 0
+/* Start of the inline ISPF Panels
+>Start
+>Panel PROCPAN1
+)ATTR
+* TYPE(INPUT)   INTENS(HIGH) COLOR(YELLOW)
+% TYPE(TEXT)    COLOR(GREEN)
++ TYPE(TEXT)    COLOR(WHITE)
+# TYPE(TEXT)    INTENS(HIGH) COLOR(BLUE)
+? TYPE(OUTPUT)  INTENS(HIGH) COLOR(RED)
+@ TYPE(OUTPUT)  COLOR(RED)
+)BODY WINDOW(48,12)
+%
+%COMMAND ===>*ZCMD      %   SCROLL ===>*AMT   +
++
++
+% Select one of the following options.
++
++    *z+  1.  LPAR Definition Details
++         2.  Processor Information
++         3.  Dynamic I/O Update Details
++         4.  I/O Configuration Details
++
+)INIT
+.ZVARS= '(poption)'
+&ZCMD= ' '
+.CURSOR= poption
+&poption= '_'
+&ZWINTTL=  'Main Panel'
+&check= '1,2,3,4'
+)REINIT
+&ZCMD= ' '
+&poption= '_'
+&ZWINTTL=  'Main Panel'
+.CURSOR= poption
+)PROC
+ver (&poption,listv,&check)
+)END
+>Panel PROCPAN2
+)ATTR
+_ TYPE(INPUT)   INTENS(HIGH) COLOR(YELLOW)
+% TYPE(TEXT)    COLOR(RED)
+* TYPE(TEXT)    COLOR(YELLOW)
++ TYPE(TEXT)    COLOR(WHITE)
+# TYPE(OUTPUT)  INTENS(HIGH) COLOR(BLUE)
+? TYPE(OUTPUT)  INTENS(HIGH) COLOR(RED)
+@ TYPE(OUTPUT)  COLOR(RED)
+)BODY WINDOW(53,5)
+%
+%  -----------------------------------------------
+%  |?info                                       *|
+%  -----------------------------------------------
+%
+)INIT
+&ZCMD= ' '
+&ZWINTTL=  'Information Panel'
+)REINIT
+&ZCMD= ' '
+)PROC
+)END
+>Panel PROCPAN3
+)ATTR
+_ TYPE(INPUT)   INTENS(HIGH) COLOR(YELLOW)
+% TYPE(TEXT)    COLOR(RED)
+* TYPE(TEXT)    COLOR(BLUE)
++ TYPE(TEXT)    COLOR(WHITE)
+# TYPE(OUTPUT)  INTENS(HIGH) COLOR(GREEN)
+? TYPE(OUTPUT)  INTENS(LOW) COLOR(BLUE)
+@ TYPE(OUTPUT)  COLOR(RED)
+)BODY WINDOW(48,12)
++
+%COMMAND ===>_ZCMD      %   SCROLL ===>_AMT   +
++
++
++    PR/SM Machine:                #z*
++    Serial Enabled Machine:       #z*
++    ESCA Processor:               #z*
++    Switch in Processor:          #z*
++    Partition Number:             #z *
++    No Of Extended Storage Slots  #z    *
++    In The current partition:
+%
+)INIT
+.ZVARS= '(prsmp,sem,escap,swtchp,partnum,noestor)'
+&ZCMD= ' '
+&ZWINTTL=  'Processor Information'
+)REINIT
+&ZCMD= ' '
+)PROC
+)END
+>Panel PROCPAN4
+)ATTR
+_ TYPE(INPUT)   INTENS(HIGH) COLOR(YELLOW)
+% TYPE(TEXT)    COLOR(RED)
+* TYPE(TEXT)    COLOR(BLUE)
++ TYPE(TEXT)    COLOR(WHITE)
+# TYPE(OUTPUT)  INTENS(HIGH) COLOR(GREEN)
+? TYPE(OUTPUT)  INTENS(LOW) COLOR(BLUE)
+@ TYPE(OUTPUT)  COLOR(RED)
+)BODY WINDOW(48,10)
++
+%COMMAND ===>_ZCMD      %   SCROLL ===>_AMT   +
++
++
++  Configuration Updated Since Last IPL:    #z*
++  Dynamic I/O Enabled:                     #z*
++  System IPLed via IODF:                   #z*
++  I/O Config Info Valid:                   #z*
++  Configuration Update Actually Performed: #z*
+%
+)INIT
+.ZVARS= '(cuipl,dioe,iodfipl,iocval,updperf)'
+&ZCMD= ' '
+&ZWINTTL=  'Dynamic I/O Update Information'
+)REINIT
+&ZCMD= ' '
+)PROC
+)END
+>Panel PROCPAN5
+)ATTR
+_ TYPE(INPUT)   INTENS(HIGH) COLOR(YELLOW)
+% TYPE(TEXT)    COLOR(RED)
+* TYPE(TEXT)    COLOR(BLUE)
++ TYPE(TEXT)    COLOR(WHITE)
+# TYPE(OUTPUT)  INTENS(HIGH) COLOR(GREEN)
+? TYPE(OUTPUT)  INTENS(LOW) COLOR(BLUE)
+@ TYPE(OUTPUT)  COLOR(RED)
+)BODY WINDOW(50,10)
++
+%COMMAND ===>_ZCMD      %   SCROLL ===>_AMT   +
++
++
++ Current IODF Name:       #z                   *
++ IODF Suffix:             #z *
++ Token Information:
++    IODF Creation Date:   #z       *
++    IODF Creation Time:   #z       *
+%
+)INIT
+.ZVARS= '(ciodfnme,iodfsufx,iodfcd,iodfct)'
+&ZCMD= ' '
+&ZWINTTL=  'I/O Configuration Information'
+)REINIT
+&ZCMD= ' '
+)PROC
+)END
+>Panel PROCPAN6
+)ATTR
+_ TYPE(INPUT)   INTENS(HIGH) COLOR(YELLOW)
+% TYPE(TEXT)    COLOR(RED)
++ TYPE(TEXT)    COLOR(GREEN)
+* TYPE(TEXT)    COLOR(WHITE)
+# TYPE(OUTPUT)  INTENS(HIGH) COLOR(GREEN)
+? TYPE(OUTPUT)  INTENS(HIGH) COLOR(BLUE)
+)BODY WINDOW(69,14)
+%COMMAND ===>_ZCMD                               %
+%                                        SCROLL ===>_AMT +
+%
+* Time Slice:                #z  %
+* No Of Physical Processors  #z %
+* Required For PR/SM Use:
+*
+* Partition  Partition  No Of Logical   Relative  Wait        Capped
+* Name       No         CPUs Assigned   SHR       Completion
+%
+)MODEL
+ #z       % #z  %      #z  %           #z    %    #z%         #z%
+)INIT
+.ZVARS= '(timeslce,phyproc,partname,partno,logcpus,relshr, +
+wcompl,capped)'
+&ZCMD=    ' '
+.CURSOR= ZCMD
+&DALCSEL= '_'
+&ZWINTTL= 'LPAR Definitions'
+)REINIT
+&ZCMD= ' '
+&DALCSEL= '_'
+.CURSOR= ZCMD
+)PROC
+)END
+>End
+  End of the inline ISPF Panels */
